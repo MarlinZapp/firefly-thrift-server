@@ -11,4 +11,5 @@ struct Firefly {
 service FireflyService {
   double getPhaseByFireflyPosition(1: Position position),
   void sendPhaseUpdate(1: Firefly firefly),
+  list<Firefly> getFireflies(),
 }

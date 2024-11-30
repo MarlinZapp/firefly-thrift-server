@@ -23,7 +23,7 @@ impl FireflyServiceSyncHandler for FireflyServiceHandler {
     ) -> thrift::Result<thrift::OrderedFloat<f64>> {
         let firefly_map = self.firefly_map.lock().unwrap();
         if let Some(&phase) = firefly_map.get(&position) {
-            println!("Got phase {} for position {:?}", phase, position);
+            //println!("Got phase {} for position {:?}", phase, position);
             Ok(thrift::OrderedFloat(phase.into_inner()))
         } else {
             Err(thrift::Error::Application(thrift::ApplicationError {
@@ -37,5 +37,16 @@ impl FireflyServiceSyncHandler for FireflyServiceHandler {
         let mut firefly_map = self.firefly_map.lock().unwrap();
         firefly_map.insert(firefly.position, firefly.phase);
         Ok(())
+    }
+
+    fn handle_get_fireflies(&self) -> thrift::Result<Vec<crate::firefly::Firefly>> {
+        let map = self.firefly_map.lock().unwrap();
+        Ok(map
+            .iter()
+            .map(|(position, phase)| crate::firefly::Firefly {
+                position: position.clone(),
+                phase: phase.clone(),
+            })
+            .collect())
     }
 }

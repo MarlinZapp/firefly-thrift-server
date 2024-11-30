@@ -168,6 +168,7 @@ impl TSerializable for Firefly {
 pub trait TFireflyServiceSyncClient {
   fn get_phase_by_firefly_position(&mut self, position: Position) -> thrift::Result<OrderedFloat<f64>>;
   fn send_phase_update(&mut self, firefly: Firefly) -> thrift::Result<()>;
+  fn get_fireflies(&mut self) -> thrift::Result<Vec<Firefly>>;
 }
 
 pub trait TFireflyServiceSyncClientMarker {}
@@ -248,6 +249,33 @@ impl <C: TThriftClient + TFireflyServiceSyncClientMarker> TFireflyServiceSyncCli
       result.ok_or()
     }
   }
+  fn get_fireflies(&mut self) -> thrift::Result<Vec<Firefly>> {
+    (
+      {
+        self.increment_sequence_number();
+        let message_ident = TMessageIdentifier::new("getFireflies", TMessageType::Call, self.sequence_number());
+        let call_args = FireflyServiceGetFirefliesArgs {  };
+        self.o_prot_mut().write_message_begin(&message_ident)?;
+        call_args.write_to_out_protocol(self.o_prot_mut())?;
+        self.o_prot_mut().write_message_end()?;
+        self.o_prot_mut().flush()
+      }
+    )?;
+    {
+      let message_ident = self.i_prot_mut().read_message_begin()?;
+      verify_expected_sequence_number(self.sequence_number(), message_ident.sequence_number)?;
+      verify_expected_service_call("getFireflies", &message_ident.name)?;
+      if message_ident.message_type == TMessageType::Exception {
+        let remote_error = thrift::Error::read_application_error_from_in_protocol(self.i_prot_mut())?;
+        self.i_prot_mut().read_message_end()?;
+        return Err(thrift::Error::Application(remote_error))
+      }
+      verify_expected_message_type(TMessageType::Reply, message_ident.message_type)?;
+      let result = FireflyServiceGetFirefliesResult::read_from_in_protocol(self.i_prot_mut())?;
+      self.i_prot_mut().read_message_end()?;
+      result.ok_or()
+    }
+  }
 }
 
 //
@@ -257,6 +285,7 @@ impl <C: TThriftClient + TFireflyServiceSyncClientMarker> TFireflyServiceSyncCli
 pub trait FireflyServiceSyncHandler {
   fn handle_get_phase_by_firefly_position(&self, position: Position) -> thrift::Result<OrderedFloat<f64>>;
   fn handle_send_phase_update(&self, firefly: Firefly) -> thrift::Result<()>;
+  fn handle_get_fireflies(&self) -> thrift::Result<Vec<Firefly>>;
 }
 
 pub struct FireflyServiceSyncProcessor<H: FireflyServiceSyncHandler> {
@@ -274,6 +303,9 @@ impl <H: FireflyServiceSyncHandler> FireflyServiceSyncProcessor<H> {
   }
   fn process_send_phase_update(&self, incoming_sequence_number: i32, i_prot: &mut dyn TInputProtocol, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
     TFireflyServiceProcessFunctions::process_send_phase_update(&self.handler, incoming_sequence_number, i_prot, o_prot)
+  }
+  fn process_get_fireflies(&self, incoming_sequence_number: i32, i_prot: &mut dyn TInputProtocol, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    TFireflyServiceProcessFunctions::process_get_fireflies(&self.handler, incoming_sequence_number, i_prot, o_prot)
   }
 }
 
@@ -354,6 +386,43 @@ impl TFireflyServiceProcessFunctions {
       },
     }
   }
+  pub fn process_get_fireflies<H: FireflyServiceSyncHandler>(handler: &H, incoming_sequence_number: i32, i_prot: &mut dyn TInputProtocol, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let _ = FireflyServiceGetFirefliesArgs::read_from_in_protocol(i_prot)?;
+    match handler.handle_get_fireflies() {
+      Ok(handler_return) => {
+        let message_ident = TMessageIdentifier::new("getFireflies", TMessageType::Reply, incoming_sequence_number);
+        o_prot.write_message_begin(&message_ident)?;
+        let ret = FireflyServiceGetFirefliesResult { result_value: Some(handler_return) };
+        ret.write_to_out_protocol(o_prot)?;
+        o_prot.write_message_end()?;
+        o_prot.flush()
+      },
+      Err(e) => {
+        match e {
+          thrift::Error::Application(app_err) => {
+            let message_ident = TMessageIdentifier::new("getFireflies", TMessageType::Exception, incoming_sequence_number);
+            o_prot.write_message_begin(&message_ident)?;
+            thrift::Error::write_application_error_to_out_protocol(&app_err, o_prot)?;
+            o_prot.write_message_end()?;
+            o_prot.flush()
+          },
+          _ => {
+            let ret_err = {
+              ApplicationError::new(
+                ApplicationErrorKind::Unknown,
+                e.to_string()
+              )
+            };
+            let message_ident = TMessageIdentifier::new("getFireflies", TMessageType::Exception, incoming_sequence_number);
+            o_prot.write_message_begin(&message_ident)?;
+            thrift::Error::write_application_error_to_out_protocol(&ret_err, o_prot)?;
+            o_prot.write_message_end()?;
+            o_prot.flush()
+          },
+        }
+      },
+    }
+  }
 }
 
 impl <H: FireflyServiceSyncHandler> TProcessor for FireflyServiceSyncProcessor<H> {
@@ -365,6 +434,9 @@ impl <H: FireflyServiceSyncHandler> TProcessor for FireflyServiceSyncProcessor<H
       },
       "sendPhaseUpdate" => {
         self.process_send_phase_update(message_ident.sequence_number, i_prot, o_prot)
+      },
+      "getFireflies" => {
+        self.process_get_fireflies(message_ident.sequence_number, i_prot, o_prot)
       },
       method => {
         Err(
@@ -574,6 +646,115 @@ impl FireflyServiceSendPhaseUpdateResult {
   fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
     let struct_ident = TStructIdentifier::new("FireflyServiceSendPhaseUpdateResult");
     o_prot.write_struct_begin(&struct_ident)?;
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
+// FireflyServiceGetFirefliesArgs
+//
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct FireflyServiceGetFirefliesArgs {
+}
+
+impl FireflyServiceGetFirefliesArgs {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<FireflyServiceGetFirefliesArgs> {
+    i_prot.read_struct_begin()?;
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = FireflyServiceGetFirefliesArgs {};
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("getFireflies_args");
+    o_prot.write_struct_begin(&struct_ident)?;
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
+// FireflyServiceGetFirefliesResult
+//
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct FireflyServiceGetFirefliesResult {
+  result_value: Option<Vec<Firefly>>,
+}
+
+impl FireflyServiceGetFirefliesResult {
+  fn ok_or(self) -> thrift::Result<Vec<Firefly>> {
+    if self.result_value.is_some() {
+      Ok(self.result_value.unwrap())
+    } else {
+      Err(
+        thrift::Error::Application(
+          ApplicationError::new(
+            ApplicationErrorKind::MissingResult,
+            "no result received for FireflyServiceGetFireflies"
+          )
+        )
+      )
+    }
+  }
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<FireflyServiceGetFirefliesResult> {
+    i_prot.read_struct_begin()?;
+    let mut f_0: Option<Vec<Firefly>> = None;
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        0 => {
+          let list_ident = i_prot.read_list_begin()?;
+          let mut val: Vec<Firefly> = Vec::with_capacity(list_ident.size as usize);
+          for _ in 0..list_ident.size {
+            let list_elem_0 = Firefly::read_from_in_protocol(i_prot)?;
+            val.push(list_elem_0);
+          }
+          i_prot.read_list_end()?;
+          f_0 = Some(val);
+        },
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = FireflyServiceGetFirefliesResult {
+      result_value: f_0,
+    };
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("FireflyServiceGetFirefliesResult");
+    o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(ref fld_var) = self.result_value {
+      o_prot.write_field_begin(&TFieldIdentifier::new("result_value", TType::List, 0))?;
+      o_prot.write_list_begin(&TListIdentifier::new(TType::Struct, fld_var.len() as i32))?;
+      for e in fld_var {
+        e.write_to_out_protocol(o_prot)?;
+      }
+      o_prot.write_list_end()?;
+      o_prot.write_field_end()?
+    }
     o_prot.write_field_stop()?;
     o_prot.write_struct_end()
   }
